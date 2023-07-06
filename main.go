@@ -33,7 +33,7 @@ func init() {
 }
 
 func initCmd() {
-	flag.StringVar(&configFile, "config", "./config.json", "where load config json")
+	flag.StringVar(&configFile, "config", "./config-fight.json", "where load config json")
 	flag.Parse()
 }
 

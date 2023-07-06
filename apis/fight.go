@@ -3,6 +3,7 @@ package apis
 import (
 	"bytes"
 	"math/rand"
+	"tfjl-h5-fight/constants"
 	"tfjl-h5-fight/core"
 	"tfjl-h5-fight/db"
 	"tfjl-h5-fight/iface"
@@ -20,7 +21,7 @@ type FightRoleLoginRouter struct {
 }
 
 func (p *FightRoleLoginRouter) Handle(request iface.IRequest) {
-	logrus.Info("*********************************对战登录************************************")
+	logrus.Info("********************************* 对战登录 ************************************")
 
 	var cFightRoleLogin = protocols.C_Fight_Role_Login{}
 	cFightRoleLogin.Decode(bytes.NewBuffer(request.GetData()))
@@ -61,7 +62,7 @@ type FightLoadingReadyRouter struct {
 }
 
 func (p *FightLoadingReadyRouter) Handle(request iface.IRequest) {
-	logrus.Info("**************************************对战加载准备*******************************************")
+	logrus.Info("************************************** 对战加载准备 *******************************************")
 	roleID, err := request.GetConnection().GetProperty("roleID")
 	if err != nil {
 		logrus.Error("GetProperty error:", err)
@@ -77,13 +78,26 @@ func (p *FightLoadingReadyRouter) Handle(request iface.IRequest) {
 	for _, v := range fightItem.Roles {
 		if v == player.PID {
 			if fightItem.FightStatus == 0 {
+				// 第一位玩家加载
 				player.FightStatus = 1
 				db.DbManager.UpdateFightItem(bson.M{"fight_token": fightItem.FightToken}, bson.M{"$set": bson.M{"fight_status": 1}})
 			} else if fightItem.FightStatus == 1 {
+				// 第二位玩家加载
 				player.FightStatus = 2
 				opponentPlayer := core.WorldMgrObj.GetPlayerByPID(player.FightInfo.RoleID)
 				opponentPlayer.FightStatus = 2
 				db.DbManager.UpdateFightItem(bson.M{"fight_token": fightItem.FightToken}, bson.M{"$set": bson.M{"fight_status": 2}})
+				var sFightLoadingReady = protocols.S_Fight_Loading_Ready{
+					Errorcode: 0,
+				}
+				request.GetConnection().SendMessage(request.GetMsgType(), protocols.P_Fight_Loading_Ready, sFightLoadingReady.Encode())
+				player.BroadCastFightMsg(request.GetMsgType(), protocols.P_Fight_Loading_Ready, sFightLoadingReady.Encode())
+				// 发送战斗开始消息
+				var sFightFightStart = protocols.S_Fight_FightStart{}
+				request.GetConnection().SendMessage(request.GetMsgType(), protocols.P_Fight_FightStart, sFightFightStart.Encode())
+				player.BroadCastFightMsg(request.GetMsgType(), protocols.P_Fight_FightStart, sFightFightStart.Encode())
+			} else if fightItem.FightStatus == 2 {
+				// 断线重连
 				var sFightLoadingReady = protocols.S_Fight_Loading_Ready{
 					Errorcode: 0,
 				}
@@ -337,7 +351,7 @@ type FightUpdateCarSYNCRouter struct {
 }
 
 func (p *FightUpdateCarSYNCRouter) Handle(request iface.IRequest) {
-	logrus.Info("******************************对战更新战车同步***********************************")
+	logrus.Info("****************************** 对战更新战车同步 ***********************************")
 	roleID, err := request.GetConnection().GetProperty("roleID")
 	if err != nil {
 		logrus.Error("GetProperty error:", err)
@@ -365,7 +379,7 @@ type FightUpdateHeroSYNCRouter struct {
 }
 
 func (p *FightUpdateHeroSYNCRouter) Handle(request iface.IRequest) {
-	logrus.Info("***************************对战更新英雄同步********************************")
+	logrus.Info("*************************** 对战更新英雄同步 ********************************")
 	roleID, err := request.GetConnection().GetProperty("roleID")
 	if err != nil {
 		logrus.Error("GetProperty error:", err)
@@ -394,7 +408,7 @@ type FightSellHeroSYNCRouter struct {
 }
 
 func (p *FightSellHeroSYNCRouter) Handle(request iface.IRequest) {
-	logrus.Info("***************************对战出售英雄同步********************************")
+	logrus.Info("*************************** 对战出售英雄同步 ********************************")
 	roleID, err := request.GetConnection().GetProperty("roleID")
 	if err != nil {
 		logrus.Error("GetProperty error:", err)
@@ -423,7 +437,7 @@ type FightSkillSYNCRouter struct {
 }
 
 func (p *FightSkillSYNCRouter) Handle(request iface.IRequest) {
-	logrus.Info("*********************************对战技能同步********************************")
+	logrus.Info("********************************* 对战技能同步 ********************************")
 }
 
 type FightOperateEquipSYNCRouter struct {
@@ -431,7 +445,7 @@ type FightOperateEquipSYNCRouter struct {
 }
 
 func (p *FightOperateEquipSYNCRouter) Handle(request iface.IRequest) {
-	logrus.Info("*********************************操作装备同步********************************")
+	logrus.Info("********************************* 操作装备同步 ********************************")
 	roleID, err := request.GetConnection().GetProperty("roleID")
 	if err != nil {
 		logrus.Error("GetProperty error:", err)
@@ -481,27 +495,28 @@ func (p *FightReportPhaseResultToFightRouter) Handle(request iface.IRequest) {
 	cFightReportPhaseResultToFight.Decode(bytes.NewBuffer(request.GetData()), player.Key)
 	logrus.Infof("%#v", cFightReportPhaseResultToFight)
 
-	if cFightReportPhaseResultToFight.ReportData.FightType == 1 {
+	if cFightReportPhaseResultToFight.ReportData.FightType == constants.FIGHT_TYPE_BATTLE {
+		// 对战
 		var sFightReportPhaseResultToFight = protocols.S_Fight_Report_Phase_Result_To_Fight{Errorcode: 0}
 		request.GetConnection().SendMessage(request.GetMsgType(), protocols.P_Fight_Report_Phase_Result_To_Fight, sFightReportPhaseResultToFight.Encode())
-	} else if cFightReportPhaseResultToFight.ReportData.FightType == 2 {
+	} else if cFightReportPhaseResultToFight.ReportData.FightType == constants.FIGHT_TYPE_COOPERATION {
 		// 合作
-
 		var sFightReportPhaseResultToFight = protocols.S_Fight_Report_Phase_Result_To_Fight{Errorcode: 0}
 		request.GetConnection().SendMessage(request.GetMsgType(), protocols.P_Fight_Report_Phase_Result_To_Fight, sFightReportPhaseResultToFight.Encode())
-	} else if cFightReportPhaseResultToFight.ReportData.FightType == 10 {
-
+	} else if cFightReportPhaseResultToFight.ReportData.FightType == constants.FIGHT_TYPE_BATTLE_GREAT_SAILING {
+		// 大航海
 		var sFightReportPhaseResultToFight = protocols.S_Fight_Report_Phase_Result_To_Fight{Errorcode: 0}
 		request.GetConnection().SendMessage(request.GetMsgType(), protocols.P_Fight_Report_Phase_Result_To_Fight, sFightReportPhaseResultToFight.Encode())
-
-	} else if cFightReportPhaseResultToFight.ReportData.FightType == 12 {
+	} else if cFightReportPhaseResultToFight.ReportData.FightType == constants.FIGHT_TYPE_WEEK_COOPERATION {
 		// 寒冰堡
-
 		var sFightReportPhaseResultToFight = protocols.S_Fight_Report_Phase_Result_To_Fight{Errorcode: 0}
 		request.GetConnection().SendMessage(request.GetMsgType(), protocols.P_Fight_Report_Phase_Result_To_Fight, sFightReportPhaseResultToFight.Encode())
-	} else if cFightReportPhaseResultToFight.ReportData.FightType == 15 {
+	} else if cFightReportPhaseResultToFight.ReportData.FightType == constants.FIGHT_TYPE_FOG_HIDDEN {
+		// 雾隐
+		var sFightReportResultToFight = protocols.S_Fight_Report_Result_To_Fight{Errorcode: 0}
+		request.GetConnection().SendMessage(request.GetMsgType(), protocols.P_Fight_Report_Phase_Result_To_Fight, sFightReportResultToFight.Encode())
+	} else if cFightReportPhaseResultToFight.ReportData.FightType == constants.FIGHT_TYPE_MACHINARIUM {
 		// 机械迷城
-
 		var sFightReportResultToFight = protocols.S_Fight_Report_Result_To_Fight{Errorcode: 0}
 		request.GetConnection().SendMessage(request.GetMsgType(), protocols.P_Fight_Report_Phase_Result_To_Fight, sFightReportResultToFight.Encode())
 	}
@@ -512,7 +527,7 @@ type FightReportResultToFightRouter struct {
 }
 
 func (p *FightReportResultToFightRouter) Handle(request iface.IRequest) {
-	logrus.Info("*******************************多人战斗结束提交*******************************")
+	logrus.Info("******************************* 多人战斗结束提交 *******************************")
 	roleID, err := request.GetConnection().GetProperty("roleID")
 	if err != nil {
 		logrus.Error("GetProperty error:", err)
@@ -524,19 +539,23 @@ func (p *FightReportResultToFightRouter) Handle(request iface.IRequest) {
 	cFightReportResultToFight.Decode(bytes.NewBuffer(request.GetData()), player.Key)
 	logrus.Infof("%#v", cFightReportResultToFight)
 
-	if cFightReportResultToFight.ReportData.FightType == 1 {
+	if cFightReportResultToFight.ReportData.FightType == constants.FIGHT_TYPE_BATTLE {
 		// 角色对战
-	} else if cFightReportResultToFight.ReportData.FightType == 2 {
+	} else if cFightReportResultToFight.ReportData.FightType == constants.FIGHT_TYPE_COOPERATION {
 		// 合作
 		var sFightReportResultToFight = protocols.S_Fight_Report_Result_To_Fight{Errorcode: 0}
 		request.GetConnection().SendMessage(request.GetMsgType(), protocols.P_Fight_Report_Result_To_Fight, sFightReportResultToFight.Encode())
-	} else if cFightReportResultToFight.ReportData.FightType == 10 {
+	} else if cFightReportResultToFight.ReportData.FightType == constants.FIGHT_TYPE_BATTLE_GREAT_SAILING {
 		// 大航海
-	} else if cFightReportResultToFight.ReportData.FightType == 12 {
+	} else if cFightReportResultToFight.ReportData.FightType == constants.FIGHT_TYPE_WEEK_COOPERATION {
 		// 寒冰堡
 		var sFightReportResultToFight = protocols.S_Fight_Report_Result_To_Fight{Errorcode: 0}
 		request.GetConnection().SendMessage(request.GetMsgType(), protocols.P_Fight_Report_Result_To_Fight, sFightReportResultToFight.Encode())
-	} else if cFightReportResultToFight.ReportData.FightType == 15 {
+	} else if cFightReportResultToFight.ReportData.FightType == constants.FIGHT_TYPE_FOG_HIDDEN {
+		// 雾隐
+		var sFightReportResultToFight = protocols.S_Fight_Report_Result_To_Fight{Errorcode: 0}
+		request.GetConnection().SendMessage(request.GetMsgType(), protocols.P_Fight_Report_Result_To_Fight, sFightReportResultToFight.Encode())
+	} else if cFightReportResultToFight.ReportData.FightType == constants.FIGHT_TYPE_MACHINARIUM {
 		// 机械迷城
 		var sFightReportResultToFight = protocols.S_Fight_Report_Result_To_Fight{Errorcode: 0}
 		request.GetConnection().SendMessage(request.GetMsgType(), protocols.P_Fight_Report_Result_To_Fight, sFightReportResultToFight.Encode())
